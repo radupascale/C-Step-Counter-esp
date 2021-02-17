@@ -21,13 +21,38 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef PRE_PROCESSING_STAGE_H
-#define PRE_PROCESSING_STAGE_H
-#include "config.h"
-#include "ringbuffer.h"
 
-void initPreProcessStage(ring_buffer_t *inBuff, ring_buffer_t *outBuff, void (*pNextStage)(void));
-void preProcessSample(time_t time, accel_t x, accel_t y, accel_t z);
-void resetPreProcess(void);
+#ifndef STEP_COUNTING_ALGO_H
+#define STEP_COUNTING_ALGO_H
+#include <stdint.h>
+/**
+    Initializes all buffers and everything the algorithm needs
+*/
+void initAlgo(void);
+
+/**
+    This function takes the raw accelerometry data and computes the entire algorithm
+    @param time, the current time in ms
+    @param x, the x axis
+    @param y, the y axis
+    @param z, the z axis
+*/
+void processSample(int64_t time, int32_t x, int32_t y, int32_t z);
+
+/**
+    Resets the number of walked steps
+*/
+void resetSteps(void);
+
+/**
+    Resets the entire algorithm
+*/
+void resetAlgo(void);
+
+/**
+    Returns the number of walked steps
+    @return steps walked
+*/
+int32_t getSteps(void);
 
 #endif

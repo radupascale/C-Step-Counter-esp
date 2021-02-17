@@ -22,75 +22,129 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #include "preProcessingStage.h"
-#include "filterStage.h"
-#include "utils.h"
-/*Uncomment this line to disable interpolation*/
-//#define STEP_INTERPOLATION_DISABLE
-static ring_buffer_t *rawBuf;
-static ring_buffer_t *ppBuf;
-static int8_t interpolationTime = 10;       //in ms
-static int16_t timeScalingFactor = 1; //100000 for validation data or 1000000 for optimisation data (oxford-step-counter dataset)
-static int32_t startTime = -1;
-static int16_t interpolationCount = 0;
+#include "config.h"
 
-void initPreProcessStage(ring_buffer_t *rawBufIn, ring_buffer_t *ppBufIn)
+#ifdef DUMP_FILE
+#include <stdio.h>
+static FILE
+    *magnitudeFile;
+static FILE *interpolatedFile;
+#endif
+
+static ring_buffer_t *inBuff;
+static ring_buffer_t *outBuff;
+static void (*nextStage)(void);
+static uint8_t samplingPeriod = 80;   //in ms, this can be smaller than the actual sampling frequency, but it will result in more computations
+static int16_t timeScalingFactor = 1; //use this for adjusting time to ms, in case the clock has higher precision
+static time_t lastSampleTime = -1;
+
+void initPreProcessStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff, void (*pNextStage)(void))
 {
-    rawBuf = rawBufIn;
-    ppBuf = ppBufIn;
+    inBuff = pInBuff;
+    outBuff = pOutBuff;
+    nextStage = pNextStage;
+
+#ifdef DUMP_FILE
+    magnitudeFile = fopen(DUMP_MAGNITUDE_FILE_NAME, "w+");
+    interpolatedFile = fopen(DUMP_INTERPOLATED_FILE_NAME, "w+");
+#endif
 }
 
 static data_point_t linearInterpolate(data_point_t dp1, data_point_t dp2, int64_t interpTime)
 {
-    long mag = (dp1.magnitude + ((dp2.magnitude - dp1.magnitude) / (dp2.time - dp1.time)) * (interpTime - dp1.time));
+    magnitude_t mag = (dp1.magnitude + ((dp2.magnitude - dp1.magnitude) / (dp2.time - dp1.time)) * (interpTime - dp1.time));
     data_point_t interp;
     interp.time = interpTime;
     interp.magnitude = mag;
     return interp;
 }
 
-void preProcessSample(int64_t time, int32_t x, int32_t y, int32_t z)
+static void outPutDataPoint(data_point_t dp)
 {
-    if (startTime == -1) //first point handler
+    lastSampleTime = dp.time;
+    ring_buffer_queue(outBuff, dp);
+    (*nextStage)();
+
+#ifdef DUMP_FILE
+    if (interpolatedFile)
     {
-        startTime = time;
+        if (!fprintf(interpolatedFile, "%lld, %lld\n", dp.time, dp.magnitude))
+            puts("error writing file");
+        fflush(interpolatedFile);
     }
-    //long magnitude = (labs(x * x) + labs(y * y) + labs(z * z)) / (labs(x) + labs(y) + labs(z));
-    int64_t magnitude = isqrt((int64_t)(x*x+y*y+z*z)); //Original
-    //long magnitude = (long)sqrt((x*x)+(y*y)+(z*z));
+#endif
+}
+
+void preProcessSample(time_t time, accel_t x, accel_t y, accel_t z)
+{
+    time = time / timeScalingFactor;
+
+    magnitude_t magnitude = (magnitude_t)sqrt((magnitude_t)(x * x + y * y + z * z));
     data_point_t dataPoint;
-    dataPoint.time = (time - startTime) / timeScalingFactor;
+    dataPoint.time = time;
     dataPoint.magnitude = magnitude;
+
+#ifdef DUMP_FILE
+    if (magnitudeFile)
+    {
+        if (!fprintf(magnitudeFile, "%lld, %lld\n", dataPoint.time, dataPoint.magnitude))
+            puts("error writing file");
+    }
+#endif
+
 #ifdef STEP_INTERPOLATION_DISABLE
-    ring_buffer_queue(ppBuf, dataPoint);
-    filterStage();
+    outPutDataPoint(dataPoint);
 #else
-    ring_buffer_queue(rawBuf, dataPoint);
-    if (ring_buffer_num_items(rawBuf) >= 2)
+    ring_buffer_queue(inBuff, dataPoint);
+    if (ring_buffer_num_items(inBuff) >= 2)
     {
         data_point_t dp1;
         data_point_t dp2;
-        ring_buffer_peek(rawBuf, &dp1, 0);
-        ring_buffer_peek(rawBuf, &dp2, 1);
-        int16_t numberOfPoints = 1 + ((((dp2.time - dp1.time)) - 1) / interpolationTime); //celing function
-        for (int16_t i = 0; i < numberOfPoints; i++)
+        // take last 2 elements
+        ring_buffer_peek(inBuff, &dp1, 0);
+        ring_buffer_peek(inBuff, &dp2, 1);
+        if (lastSampleTime == -1)
+            lastSampleTime = dp1.time;
+
+        if (dp2.time - lastSampleTime == samplingPeriod)
         {
-            int64_t interpTime = (int64_t)interpolationCount * interpolationTime;
-            if (dp1.time <= interpTime && interpTime < dp2.time)
+            // no need to interpolate!
+            outPutDataPoint(dp2);
+        }
+        else if (dp2.time - lastSampleTime > samplingPeriod)
+        {
+            int8_t numberOfPoints = 1 + ((((dp2.time - lastSampleTime)) - 1) / samplingPeriod); //number of points to be generated, ceiled
+
+            for (int8_t i = 1; i < numberOfPoints; i++)
             {
-                data_point_t interpolated = linearInterpolate(dp1, dp2, interpTime);
-                ring_buffer_queue(ppBuf, interpolated);
-                filterStage();
-                interpolationCount++;
+                time_t interpTime = lastSampleTime + samplingPeriod;
+
+                if (dp1.time <= interpTime && interpTime <= dp2.time)
+                {
+                    data_point_t interpolated = linearInterpolate(dp1, dp2, interpTime);
+                    outPutDataPoint(interpolated);
+                }
             }
         }
+        // remove oldest element in queue
         data_point_t dataPoint;
-        ring_buffer_dequeue(rawBuf, &dataPoint);
+        ring_buffer_dequeue(inBuff, &dataPoint);
     }
 #endif
 }
 
 void resetPreProcess(void)
 {
-    startTime = -1;
-    interpolationCount = 0;
+    lastSampleTime = -1;
+
+#ifdef DUMP_FILE
+    if (magnitudeFile)
+    {
+        fflush(magnitudeFile);
+    }
+    if (interpolatedFile)
+    {
+        fflush(interpolatedFile);
+    }
+#endif
 }

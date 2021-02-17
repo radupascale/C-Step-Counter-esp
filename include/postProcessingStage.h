@@ -1,7 +1,7 @@
 /* 
 The MIT License (MIT)
 
-Copyright (c) 2020 Anna Brondin and Marcus Nordström
+Copyright (c) 2020 Anna Brondin, Marcus Nordström and Dario Salvi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,13 +25,9 @@ SOFTWARE.
 #define POST_PROCESSING_STAGE_H
 #include "ringbuffer.h"
 
-
-void initPostProcessingStage(ring_buffer_t *peakBuf, void (* stepCallback)(void));
+void initPostProcessingStage(ring_buffer_t *pInBuff, void (*stepCallback)(void));
 void postProcessingStage(void);
 void resetPostProcess(void);
-
-#ifdef DEBUG
 void changeTimeThreshold(int16_t thresh);
-#endif
 
 #endif

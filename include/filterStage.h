@@ -1,7 +1,7 @@
 /* 
 The MIT License (MIT)
 
-Copyright (c) 2020 Anna Brondin and Marcus Nordström
+Copyright (c) 2020 Anna Brondin and Marcus Nordström and Dario Salvi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,8 +25,7 @@ SOFTWARE.
 #define FILTER_STAGE_H
 #include "ringbuffer.h"
 
-
-void initFilterStage(ring_buffer_t *ppBuf, ring_buffer_t *smoothBuf);
+void initFilterStage(ring_buffer_t *inBuf, ring_buffer_t *outBuf, void (*pNextStage)(void));
 void filterStage(void);
 
 #endif

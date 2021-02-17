@@ -24,29 +24,43 @@ SOFTWARE.
 
 #include "detectionStage.h"
 #include "postProcessingStage.h"
-#include "utils.h"
-//#include <math.h>
-static ring_buffer_t *peakScoreBuf;
-static ring_buffer_t *peakBuf;
-static int64_t mean = 0;
-static int64_t std = 0;
-static int64_t count = 0;
-static int16_t threshold_int = 2;
-static int16_t threshold_frac = 2;
+#include "config.h"
 
-void initDetectionStage(ring_buffer_t *peakScoreBufIn, ring_buffer_t *peakBufIn)
+#ifdef DUMP_FILE
+#include <stdio.h>
+static FILE
+    *detectionFile;
+static FILE *detectionFile;
+#endif
+
+static ring_buffer_t *inBuff;
+static ring_buffer_t *outBuff;
+static void (*nextStage)(void);
+
+static magnitude_t mean = 0;
+static accumulator_t std = 0;
+static time_t count = 0;
+static int16_t threshold_int = 0;
+static int16_t threshold_frac = 6;
+
+void initDetectionStage(ring_buffer_t *pInBuff, ring_buffer_t *peakBufIn, void (*pNextStage)(void))
 {
-    peakScoreBuf = peakScoreBufIn;
-    peakBuf = peakBufIn;
+    inBuff = pInBuff;
+    outBuff = peakBufIn;
+    nextStage = pNextStage;
+
+#ifdef DUMP_FILE
+    detectionFile = fopen(DUMP_DETECTION_FILE_NAME, "w+");
+#endif
 }
 
 void detectionStage(void)
 {
-    if (!ring_buffer_is_empty(peakScoreBuf))
+    if (!ring_buffer_is_empty(inBuff))
     {
-        long oMean = mean;
+        accumulator_t oMean = mean;
         data_point_t dataPoint;
-        ring_buffer_dequeue(peakScoreBuf, &dataPoint);
+        ring_buffer_dequeue(inBuff, &dataPoint);
         count++;
         if (count == 1)
         {
@@ -56,26 +70,31 @@ void detectionStage(void)
         else if (count == 2)
         {
             mean = (mean + dataPoint.magnitude) / 2;
-            std = isqrt(((dataPoint.magnitude - mean) * (dataPoint.magnitude - mean)) + ((oMean - mean) * (oMean - mean))) / 2;
-            //std = (long)sqrt(pow(dataPoint.magnitude - mean, 2) + pow(oMean - mean, 2)) / 2;
+            std = sqrt(((dataPoint.magnitude - mean) * (dataPoint.magnitude - mean)) + ((oMean - mean) * (oMean - mean))) / 2;
         }
         else
         {
             mean = (dataPoint.magnitude + ((count - 1) * mean)) / count;
-            //Split into parts to avoid overflow
-            int64_t part1 = ((std*std) / (count-1)) * (count-2);
-            int64_t part2 = ((oMean - mean) * (oMean - mean));
-            int64_t part3 = ((dataPoint.magnitude - mean) * (dataPoint.magnitude - mean)) / count;
-            std = isqrt(part1 + part2 + part3);
-            //std = (long)sqrt(((count - 2) * pow(std, 2) / (count - 1)) + pow(oMean - mean, 2) + pow(dataPoint.magnitude - mean, 2) / count);
+            accumulator_t part1 = ((std * std) / (count - 1)) * (count - 2);
+            accumulator_t part2 = ((oMean - mean) * (oMean - mean));
+            accumulator_t part3 = ((dataPoint.magnitude - mean) * (dataPoint.magnitude - mean)) / count;
+            std = (accumulator_t)sqrt(part1 + part2 + part3);
         }
         if (count > 15)
         {
-            if ((dataPoint.magnitude - mean) > (std*threshold_int + (std/threshold_frac)))
+            if ((dataPoint.magnitude - mean) > (std * threshold_int + (std / threshold_frac)))
             {
                 // This is a peak
-                ring_buffer_queue(peakBuf, dataPoint);
-                postProcessingStage();
+                ring_buffer_queue(outBuff, dataPoint);
+                (*nextStage)();
+#ifdef DUMP_FILE
+                if (detectionFile)
+                {
+                    if (!fprintf(detectionFile, "%lld, %lld\n", dataPoint.time, dataPoint.magnitude))
+                        puts("error writing file");
+                    fflush(detectionFile);
+                }
+#endif
             }
         }
     }

@@ -1,7 +1,7 @@
 /* 
 The MIT License (MIT)
 
-Copyright (c) 2020 Anna Brondin and Marcus Nordström
+Copyright (c) 2020 Anna Brondin, Marcus Nordström and Dario Salvi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -24,35 +24,86 @@ SOFTWARE.
 
 #include "filterStage.h"
 #include "scoringStage.h"
-static ring_buffer_t *ppBuf;
-static ring_buffer_t *smoothBuf;
-static int32_t coeffs[13] = {1687988, 58749795, 16299118, 36044776, 63539094, 8928125, 100000000, 8928125, 63539094, 36044776, 16299118, 58749795, 1687988};
-static int32_t filterSum = 525454400;
-static int8_t filterLen = 13;
 
-void
-initFilterStage(ring_buffer_t * ppBufIn, ring_buffer_t *smoothBufIn)
+#ifdef DUMP_FILE
+#include <stdio.h>
+static FILE
+    *filteredFile;
+static FILE *filteredFile;
+#endif
+
+static ring_buffer_t *inBuff;
+static ring_buffer_t *outBuff;
+static void (*nextStage)(void);
+
+/*
+FIR filter designed with
+http://t-filter.appspot.com
+
+sampling frequency: 12.5 Hz
+
+fixed point precision: 32 bits
+
+* 0 Hz - 3 Hz
+  gain = 1
+  desired ripple = 5 dB
+  actual ripple = n/a
+
+* 4 Hz - 6.25 Hz
+  gain = 0
+  desired attenuation = -10 dB
+  actual attenuation = n/a
+
+*/
+#define FILTER_TAP_NUM 7
+static magnitude_t filter_taps[FILTER_TAP_NUM] = {
+    -2696,
+    -3734,
+    11354,
+    17457,
+    11354,
+    -3734,
+    -2696};
+
+void initFilterStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff, void (*pNextStage)(void))
 {
-    ppBuf = ppBufIn;
-    smoothBuf = smoothBufIn;
+    inBuff = pInBuff;
+    outBuff = pOutBuff;
+    nextStage = pNextStage;
+
+#ifdef DUMP_FILE
+    filteredFile = fopen(DUMP_FILTERED_FILE_NAME, "w+");
+#endif
 }
 
 void filterStage(void)
 {
-    if (ring_buffer_num_items(ppBuf) == filterLen)
+    if (ring_buffer_num_items(inBuff) == FILTER_TAP_NUM)
     {
-        int64_t sum = 0;
+        accumulator_t sum = 0;
         data_point_t dataPoint;
-        for (int8_t i = 0; i < filterLen; i++)
-        {
-            ring_buffer_peek(ppBuf, &dataPoint, i);
-            sum += dataPoint.magnitude * coeffs[i];
-        }
-        ring_buffer_dequeue(ppBuf, &dataPoint);
         data_point_t out;
-        out.time = dataPoint.time;
-        out.magnitude = sum / filterSum;
-        ring_buffer_queue(smoothBuf, out);
-        scoringStage();
+
+        for (int8_t i = 0; i < FILTER_TAP_NUM; i++)
+        {
+            ring_buffer_peek(inBuff, &dataPoint, i);
+            if (i == FILTER_TAP_NUM - 1)
+                out.time = dataPoint.time;
+            sum += dataPoint.magnitude * filter_taps[i];
+        }
+        out.magnitude = sum >> 16;
+
+        ring_buffer_dequeue(inBuff, &dataPoint);
+        ring_buffer_queue(outBuff, out);
+        (*nextStage)();
+
+#ifdef DUMP_FILE
+        if (filteredFile)
+        {
+            if (!fprintf(filteredFile, "%lld, %lld\n", out.time, out.magnitude))
+                puts("error writing file");
+            fflush(filteredFile);
+        }
+#endif
     }
 }

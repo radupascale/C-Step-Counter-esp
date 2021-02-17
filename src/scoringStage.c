@@ -1,7 +1,7 @@
 /* 
 The MIT License (MIT)
 
-Copyright (c) 2020 Anna Brondin and Marcus Nordström
+Copyright (c) 2020 Anna Brondin, Marcus Nordström and Dario Salvi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,43 +23,67 @@ SOFTWARE.
 */
 #include "scoringStage.h"
 #include "detectionStage.h"
-static ring_buffer_t *smoothBuf;
-static ring_buffer_t *peakScoreBuf;
-static ring_buffer_size_t windowSize = 40;
-static ring_buffer_size_t midpoint = 20; //half of size
 
-void initScoringStage(ring_buffer_t *smoothBufIn, ring_buffer_t *peakScoreBufIn)
+#ifdef DUMP_FILE
+#include <stdio.h>
+static FILE
+    *scoringFile;
+static FILE *scoringFile;
+#endif
+
+static ring_buffer_t *inBuff;
+static ring_buffer_t *outBuff;
+static void (*nextStage)(void);
+
+static ring_buffer_size_t windowSize = 10;
+static ring_buffer_size_t midpoint = 5; //half of size
+
+void initScoringStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff, void (*pNextStage)(void))
 {
-    smoothBuf = smoothBufIn;
-    peakScoreBuf = peakScoreBufIn;
+    inBuff = pInBuff;
+    outBuff = pOutBuff;
+    nextStage = pNextStage;
+
+#ifdef DUMP_FILE
+    scoringFile = fopen(DUMP_SCORING_FILE_NAME, "w+");
+#endif
 }
 
 void scoringStage(void)
 {
-    if (ring_buffer_num_items(smoothBuf) == windowSize)
+    if (ring_buffer_num_items(inBuff) == windowSize)
     {
-        int64_t diffLeft = 0;
-        int64_t diffRight = 0;
+        magnitude_t diffLeft = 0;
+        magnitude_t diffRight = 0;
         data_point_t midpointData;
-        ring_buffer_peek(smoothBuf, &midpointData, midpoint);
+        ring_buffer_peek(inBuff, &midpointData, midpoint);
         data_point_t dataPoint;
         for (ring_buffer_size_t i = 0; i < midpoint; i++)
         {
-            ring_buffer_peek(smoothBuf, &dataPoint, i);
+            ring_buffer_peek(inBuff, &dataPoint, i);
             diffLeft += midpointData.magnitude - dataPoint.magnitude;
         }
         for (ring_buffer_size_t j = midpoint + 1; j < windowSize; j++)
         {
-            ring_buffer_peek(smoothBuf, &dataPoint, j);
+            ring_buffer_peek(inBuff, &dataPoint, j);
             diffRight += midpointData.magnitude - dataPoint.magnitude;
         }
-        long scorePeak = (diffLeft + diffRight) / (windowSize - 1);
+        magnitude_t scorePeak = (diffLeft + diffRight) / (windowSize - 1);
         data_point_t out;
         out.time = midpointData.time;
         out.magnitude = scorePeak;
-        ring_buffer_queue(peakScoreBuf, out);
-        ring_buffer_dequeue(smoothBuf, &midpointData);
-        detectionStage();
+        ring_buffer_queue(outBuff, out);
+        ring_buffer_dequeue(inBuff, &midpointData);
+        (*nextStage)();
+
+#ifdef DUMP_FILE
+        if (scoringFile)
+        {
+            if (!fprintf(scoringFile, "%lld, %lld\n", out.time, out.magnitude))
+                puts("error writing file");
+            fflush(scoringFile);
+        }
+#endif
     }
 }
 

@@ -21,13 +21,39 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#ifndef PRE_PROCESSING_STAGE_H
-#define PRE_PROCESSING_STAGE_H
-#include "config.h"
-#include "ringbuffer.h"
+#ifndef STEP_COUNTING_ALGO_UTILS_H
+#define STEP_COUNTING_ALGO_UTILS_H
+#include <stdint.h>
 
-void initPreProcessStage(ring_buffer_t *inBuff, ring_buffer_t *outBuff, void (*pNextStage)(void));
-void preProcessSample(time_t time, accel_t x, accel_t y, accel_t z);
-void resetPreProcess(void);
+static int64_t sqrt(int64_t number)
+{
+  int64_t base, i, y;
+  base = 67108864; //2^24
+  y = 0;
+  for (i = 1; i <= 24; i++)
+  {
+    y += base;
+    if ((y * y) > number)
+    {
+      y -= base; // base should not have been added, so we substract again
+    }
+    base = base >> 1; // shift 1 digit to the right = divide by 2
+  }
+  return y;
+}
 
+/*static long isqrt(long number)
+{ //http://www.codecodex.com/wiki/Calculate_an_integer_square_root#C
+  unsigned long n = 1;
+  unsigned long n1 = ((n + (number / n)) >> 1);
+
+  while (n1 - n > 1)
+  {
+    n = n1;
+    n1 = ((n + (number / n)) >> 1);
+  }
+  while (n1 * n1 > number)
+    n1--;
+  return (long)n1;
+}*/
 #endif

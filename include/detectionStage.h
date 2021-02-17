@@ -25,13 +25,9 @@ SOFTWARE.
 #define DETECTION_STAGE_H
 #include "ringbuffer.h"
 
-
-void initDetectionStage(ring_buffer_t *peakScoreBuf, ring_buffer_t *peakBuf);
+void initDetectionStage(ring_buffer_t *inBuff, ring_buffer_t *outBuff, void (*nextStage)(void));
 void detectionStage(void);
 void resetDetection(void);
-
-#ifdef DEBUG
 void changeDetectionThreshold(int16_t whole, int16_t frac);
-#endif
 
 #endif

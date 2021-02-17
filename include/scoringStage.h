@@ -1,7 +1,7 @@
 /* 
 The MIT License (MIT)
 
-Copyright (c) 2020 Anna Brondin and Marcus Nordström
+Copyright (c) 2020 Anna Brondin, Marcus Nordström and Dario Salvi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -25,11 +25,9 @@ SOFTWARE.
 #define SCORING_STAGE_H
 #include "ringbuffer.h"
 
-void initScoringStage(ring_buffer_t *smoothBuf, ring_buffer_t *peakScoreBuf);
+void initScoringStage(ring_buffer_t *inBuff, ring_buffer_t *outBuff, void (*pNextStage)(void));
 void scoringStage(void);
 
-#ifdef DEBUG
 void changeWindowSize(ring_buffer_size_t windowSize);
-#endif
 
 #endif

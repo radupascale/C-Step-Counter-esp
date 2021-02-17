@@ -1,7 +1,7 @@
 /* 
 The MIT License (MIT)
 
-Copyright (c) 2020 Anna Brondin and Marcus Nordström
+Copyright (c) 2020 Anna Brondin, Marcus Nordström and Dario Salvi
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -23,24 +23,36 @@ SOFTWARE.
 */
 
 #include "postProcessingStage.h"
-static ring_buffer_t *peakBuf;
+#ifdef DUMP_FILE
+#include <stdio.h>
+static FILE
+    *postProcFile;
+static FILE *postProcFile;
+#endif
+
+static ring_buffer_t *inBuff;
 static data_point_t lastDataPoint;
-static int16_t timeThreshold = 200;
+static int16_t timeThreshold = 300; // in ms, this discards steps that are too close in time, 3 steps /s is a reasonable maximum
 static void (*stepCallback)(void);
-void initPostProcessingStage(ring_buffer_t *peakBufIn, void (*stepCallbackIn)(void))
+
+void initPostProcessingStage(ring_buffer_t *pInBuff, void (*stepCallbackIn)(void))
 {
-    peakBuf = peakBufIn;
+    inBuff = pInBuff;
     stepCallback = stepCallbackIn;
     lastDataPoint.time = 0;
     lastDataPoint.magnitude = 0;
+
+#ifdef DUMP_FILE
+    postProcFile = fopen(DUMP_POSTPROC_FILE_NAME, "w+");
+#endif
 }
 
 void postProcessingStage(void)
 {
-    if (!ring_buffer_is_empty(peakBuf))
+    if (!ring_buffer_is_empty(inBuff))
     {
         data_point_t dataPoint;
-        ring_buffer_dequeue(peakBuf, &dataPoint);
+        ring_buffer_dequeue(inBuff, &dataPoint);
         if (lastDataPoint.time == 0)
         {
             lastDataPoint = dataPoint;
@@ -51,6 +63,15 @@ void postProcessingStage(void)
             {
                 lastDataPoint = dataPoint;
                 (*stepCallback)();
+
+#ifdef DUMP_FILE
+                if (postProcFile)
+                {
+                    if (!fprintf(postProcFile, "%lld, %lld\n", dataPoint.time, dataPoint.magnitude))
+                        puts("error writing file");
+                    fflush(postProcFile);
+                }
+#endif
             }
             else
             {

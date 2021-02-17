@@ -21,6 +21,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+#include <stddef.h>
 #include "StepCountingAlgo.h"
 #include "ringbuffer.h"
 #include "preProcessingStage.h"
@@ -29,7 +30,7 @@ SOFTWARE.
 #include "detectionStage.h"
 #include "postProcessingStage.h"
 // General data
-static int32_t steps;
+static steps_t steps;
 // Buffers
 static ring_buffer_t rawBuf;
 static ring_buffer_t ppBuf;
@@ -44,19 +45,25 @@ static void increaseStepCallback(void)
 
 void initAlgo()
 {
+    // init buffers
     ring_buffer_init(&rawBuf);
     ring_buffer_init(&ppBuf);
-    initPreProcessStage(&rawBuf, &ppBuf);
     ring_buffer_init(&smoothBuf);
-    initFilterStage(&ppBuf, &smoothBuf);
     ring_buffer_init(&peakScoreBuf);
-    initScoringStage(&smoothBuf, &peakScoreBuf);
     ring_buffer_init(&peakBuf);
-    initDetectionStage(&peakScoreBuf, &peakBuf);
+
+#ifdef SKIP_FILTER
+    initPreProcessStage(&rawBuf, &smoothBuf, scoringStage);
+#else
+    initPreProcessStage(&rawBuf, &ppBuf, filterStage);
+    initFilterStage(&ppBuf, &smoothBuf, scoringStage);
+#endif
+    initScoringStage(&smoothBuf, &peakScoreBuf, detectionStage);
+    initDetectionStage(&peakScoreBuf, &peakBuf, postProcessingStage);
     initPostProcessingStage(&peakBuf, &increaseStepCallback);
 }
 
-void processSample(int64_t time, int32_t x, int32_t y, int32_t z)
+void processSample(time_t time, accel_t x, accel_t y, accel_t z)
 {
     preProcessSample(time, x, y, z);
 }
@@ -78,8 +85,7 @@ void resetAlgo(void)
     ring_buffer_init(&peakBuf);
 }
 
-int32_t getSteps(void)
+steps_t getSteps(void)
 {
     return steps;
 }
-
