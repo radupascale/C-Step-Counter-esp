@@ -25,6 +25,8 @@ SOFTWARE.
 #ifndef STEP_COUNTING_ALGO_H
 #define STEP_COUNTING_ALGO_H
 #include <stdint.h>
+#include "config.h"
+
 /**
     Initializes all buffers and everything the algorithm needs
 */
@@ -37,7 +39,7 @@ void initAlgo(void);
     @param y, the y axis
     @param z, the z axis
 */
-void processSample(int64_t time, int32_t x, int32_t y, int32_t z);
+void processSample(time_t time, accel_t x, accel_t y, accel_t z);
 
 /**
     Resets the number of walked steps
@@ -53,6 +55,6 @@ void resetAlgo(void);
     Returns the number of walked steps
     @return steps walked
 */
-int32_t getSteps(void);
+steps_t getSteps(void);
 
 #endif
