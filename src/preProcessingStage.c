@@ -92,7 +92,7 @@ void preProcessSample(time_t time, accel_t x, accel_t y, accel_t z)
     }
 #endif
 
-#ifdef STEP_INTERPOLATION_DISABLE
+#ifdef SKIP_INTERPOLATION
     outPutDataPoint(dataPoint);
 #else
     ring_buffer_queue(inBuff, dataPoint);

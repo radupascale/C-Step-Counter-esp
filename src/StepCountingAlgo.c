@@ -25,6 +25,7 @@ SOFTWARE.
 #include "StepCountingAlgo.h"
 #include "ringbuffer.h"
 #include "preProcessingStage.h"
+#include "motionDetectStage.h"
 #include "filterStage.h"
 #include "scoringStage.h"
 #include "detectionStage.h"
@@ -34,7 +35,10 @@ static steps_t steps;
 // Buffers
 static ring_buffer_t rawBuf;
 static ring_buffer_t ppBuf;
+static ring_buffer_t mdBuf;
+#ifndef SKIP_FILTER
 static ring_buffer_t smoothBuf;
+#endif
 static ring_buffer_t peakScoreBuf;
 static ring_buffer_t peakBuf;
 
@@ -48,17 +52,22 @@ void initAlgo()
     // init buffers
     ring_buffer_init(&rawBuf);
     ring_buffer_init(&ppBuf);
+    ring_buffer_init(&mdBuf);
+#ifndef SKIP_FILTER
     ring_buffer_init(&smoothBuf);
+#endif
     ring_buffer_init(&peakScoreBuf);
     ring_buffer_init(&peakBuf);
 
+    initPreProcessStage(&rawBuf, &ppBuf, motionDetectStage);
 #ifdef SKIP_FILTER
-    initPreProcessStage(&rawBuf, &smoothBuf, scoringStage);
+    initMotionDetectStage(&ppBuf, &mdBuf, scoringStage);
+    initScoringStage(&mdBuf, &peakScoreBuf, detectionStage);
 #else
-    initPreProcessStage(&rawBuf, &ppBuf, filterStage);
-    initFilterStage(&ppBuf, &smoothBuf, scoringStage);
-#endif
+    initMotionDetectStage(&ppBuf, &mdBuf, filterStage);
+    initFilterStage(&mdBuf, &smoothBuf, scoringStage);
     initScoringStage(&smoothBuf, &peakScoreBuf, detectionStage);
+#endif
     initDetectionStage(&peakScoreBuf, &peakBuf, postProcessingStage);
     initPostProcessingStage(&peakBuf, &increaseStepCallback);
 }
@@ -80,7 +89,10 @@ void resetAlgo(void)
     resetPostProcess();
     ring_buffer_init(&rawBuf);
     ring_buffer_init(&ppBuf);
+    ring_buffer_init(&mdBuf);
+#ifndef SKIP_FILTER
     ring_buffer_init(&smoothBuf);
+#endif
     ring_buffer_init(&peakScoreBuf);
     ring_buffer_init(&peakBuf);
 }
