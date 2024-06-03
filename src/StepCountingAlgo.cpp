@@ -1,4 +1,4 @@
-/* 
+/*
 The MIT License (MIT)
 
 Copyright (c) 2020 Anna Brondin and Marcus Nordström
@@ -21,15 +21,16 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
-#include <stddef.h>
 #include "StepCountingAlgo.h"
-#include "ringbuffer.h"
-#include "preProcessingStage.h"
-#include "motionDetectStage.h"
-#include "filterStage.h"
-#include "scoringStage.h"
 #include "detectionStage.h"
+#include "filterStage.h"
+#include "motionDetectStage.h"
 #include "postProcessingStage.h"
+#include "preProcessingStage.h"
+#include "ringbuffer.h"
+#include "scoringStage.h"
+#include "pedometer_calibration.h"
+#include <stddef.h>
 // General data
 static steps_t steps;
 // Buffers
@@ -44,60 +45,64 @@ static ring_buffer_t peakBuf;
 
 static void increaseStepCallback(void)
 {
-    steps++;
+	steps++;
 }
 
 void initAlgo()
 {
-    // init buffers
-    ring_buffer_init(&rawBuf);
-    ring_buffer_init(&ppBuf);
-    ring_buffer_init(&mdBuf);
+	// init buffers
+	ring_buffer_init(&rawBuf);
+	ring_buffer_init(&ppBuf);
+	ring_buffer_init(&mdBuf);
 #ifndef SKIP_FILTER
-    ring_buffer_init(&smoothBuf);
+	ring_buffer_init(&smoothBuf);
 #endif
-    ring_buffer_init(&peakScoreBuf);
-    ring_buffer_init(&peakBuf);
+	ring_buffer_init(&peakScoreBuf);
+	ring_buffer_init(&peakBuf);
 
-    initPreProcessStage(&rawBuf, &ppBuf, motionDetectStage);
+	initPreProcessStage(&rawBuf, &ppBuf, motionDetectStage);
 #ifdef SKIP_FILTER
-    initMotionDetectStage(&ppBuf, &mdBuf, scoringStage);
-    initScoringStage(&mdBuf, &peakScoreBuf, detectionStage);
+	initMotionDetectStage(&ppBuf, &mdBuf, scoringStage);
+	initScoringStage(&mdBuf, &peakScoreBuf, detectionStage);
 #else
-    initMotionDetectStage(&ppBuf, &mdBuf, filterStage);
-    initFilterStage(&mdBuf, &smoothBuf, scoringStage);
-    initScoringStage(&smoothBuf, &peakScoreBuf, detectionStage);
+	initMotionDetectStage(&ppBuf, &mdBuf, filterStage);
+	initFilterStage(&mdBuf, &smoothBuf, scoringStage);
+	initScoringStage(&smoothBuf, &peakScoreBuf, detectionStage);
 #endif
-    initDetectionStage(&peakScoreBuf, &peakBuf, postProcessingStage);
-    initPostProcessingStage(&peakBuf, &increaseStepCallback);
+	initDetectionStage(&peakScoreBuf, &peakBuf, postProcessingStage);
+	initPostProcessingStage(&peakBuf, &increaseStepCallback);
+
+    changeWindowSize(OPT_WINDOWSIZE);
+    changeDetectionThreshold(OPT_DETECTION_THRESHOLD, OPT_DETECTION_THRESHOLD_FRAC);
+    changeTimeThreshold(OPT_TIME_THRESHOLD);
 }
 
-void processSample(time_t time, accel_t x, accel_t y, accel_t z)
+void processSample(time_accel_t time, accel_t x, accel_t y, accel_t z)
 {
-    preProcessSample(time, x, y, z);
+	preProcessSample(time, x, y, z);
 }
 
 void resetSteps(void)
 {
-    steps = 0;
+	steps = 0;
 }
 
 void resetAlgo(void)
 {
-    resetPreProcess();
-    resetDetection();
-    resetPostProcess();
-    ring_buffer_init(&rawBuf);
-    ring_buffer_init(&ppBuf);
-    ring_buffer_init(&mdBuf);
+	resetPreProcess();
+	resetDetection();
+	resetPostProcess();
+	ring_buffer_init(&rawBuf);
+	ring_buffer_init(&ppBuf);
+	ring_buffer_init(&mdBuf);
 #ifndef SKIP_FILTER
-    ring_buffer_init(&smoothBuf);
+	ring_buffer_init(&smoothBuf);
 #endif
-    ring_buffer_init(&peakScoreBuf);
-    ring_buffer_init(&peakBuf);
+	ring_buffer_init(&peakScoreBuf);
+	ring_buffer_init(&peakBuf);
 }
 
 steps_t getSteps(void)
 {
-    return steps;
+	return steps;
 }

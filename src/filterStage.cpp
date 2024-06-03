@@ -21,74 +21,89 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+
+#include "filterStage.h"
 #include "scoringStage.h"
-#include "detectionStage.h"
 
 #ifdef DUMP_FILE
 #include <stdio.h>
 static FILE
-    *scoringFile;
-static FILE *scoringFile;
+    *filteredFile;
+static FILE *filteredFile;
 #endif
 
 static ring_buffer_t *inBuff;
 static ring_buffer_t *outBuff;
 static void (*nextStage)(void);
 
-static ring_buffer_size_t windowSize = 10;
-static ring_buffer_size_t midpoint = 5; //half of size
+/*
+FIR filter designed with
+http://t-filter.appspot.com
 
-void initScoringStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff, void (*pNextStage)(void))
+sampling frequency: 12.5 Hz
+
+fixed point precision: 32 bits
+
+* 0 Hz - 3 Hz
+  gain = 1
+  desired ripple = 5 dB
+  actual ripple = n/a
+
+* 4 Hz - 6.25 Hz
+  gain = 0
+  desired attenuation = -10 dB
+  actual attenuation = n/a
+
+*/
+#define FILTER_TAP_NUM 7
+static magnitude_t filter_taps[FILTER_TAP_NUM] = {
+    static_cast<magnitude_t>(-2696),
+    static_cast<magnitude_t>(-3734),
+    static_cast<magnitude_t>(11354),
+    static_cast<magnitude_t>(17457),
+    static_cast<magnitude_t>(11354),
+    static_cast<magnitude_t>(-3734),
+    static_cast<magnitude_t>(-2696)};
+
+void initFilterStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff, void (*pNextStage)(void))
 {
     inBuff = pInBuff;
     outBuff = pOutBuff;
     nextStage = pNextStage;
 
 #ifdef DUMP_FILE
-    scoringFile = fopen(DUMP_SCORING_FILE_NAME, "w+");
+    filteredFile = fopen(DUMP_FILTERED_FILE_NAME, "w+");
 #endif
 }
 
-void scoringStage(void)
+void filterStage(void)
 {
-    if (ring_buffer_num_items(inBuff) == windowSize)
+    if (ring_buffer_num_items(inBuff) == FILTER_TAP_NUM)
     {
-        magnitude_t diffLeft = 0;
-        magnitude_t diffRight = 0;
-        data_point_t midpointData;
-        ring_buffer_peek(inBuff, &midpointData, midpoint);
+        accumulator_t sum = 0;
         data_point_t dataPoint;
-        for (ring_buffer_size_t i = 0; i < midpoint; i++)
+        data_point_t out;
+
+        for (int8_t i = 0; i < FILTER_TAP_NUM; i++)
         {
             ring_buffer_peek(inBuff, &dataPoint, i);
-            diffLeft += midpointData.magnitude - dataPoint.magnitude;
+            if (i == FILTER_TAP_NUM - 1)
+                out.time = dataPoint.time;
+            sum += dataPoint.magnitude * filter_taps[i];
         }
-        for (ring_buffer_size_t j = midpoint + 1; j < windowSize; j++)
-        {
-            ring_buffer_peek(inBuff, &dataPoint, j);
-            diffRight += midpointData.magnitude - dataPoint.magnitude;
-        }
-        magnitude_t scorePeak = (diffLeft + diffRight) / (windowSize - 1);
-        data_point_t out;
-        out.time = midpointData.time;
-        out.magnitude = scorePeak;
+        out.magnitude = sum >> 16;
+
+        ring_buffer_dequeue(inBuff, &dataPoint);
         ring_buffer_queue(outBuff, out);
-        ring_buffer_dequeue(inBuff, &midpointData);
         (*nextStage)();
 
 #ifdef DUMP_FILE
-        if (scoringFile)
+        if (filteredFile)
         {
-            if (!fprintf(scoringFile, "%lld, %lld\n", out.time, out.magnitude))
+            if (!fprintf(filteredFile, "%lld, %lld\n", out.time, out.magnitude))
                 puts("error writing file");
-            fflush(scoringFile);
+            fflush(filteredFile);
         }
 #endif
     }
-}
-
-void changeWindowSize(ring_buffer_size_t windowsize)
-{
-    windowSize = windowsize;
-    midpoint = windowsize / 2;
 }

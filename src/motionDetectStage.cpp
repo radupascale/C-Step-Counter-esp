@@ -1,4 +1,4 @@
-/* 
+/*
 The MIT License (MIT)
 
 Copyright (c) 2020 Anna Brondin and Marcus Nordström and Dario Salvi
@@ -22,14 +22,22 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
 #include "motionDetectStage.h"
+#if ESP_LOG_PEDOMETER
+#include "esp_log.h"
+static const char *TAG = "Motion detect";
+#else
+static const char *TAG = "";
+#endif
 
 #define issigned(t) (((t)(-1)) < ((t)0))
 
-#define umaxof(t) (((0x1ULL << ((sizeof(t) * 8ULL) - 1ULL)) - 1ULL) | \
-                   (0xFULL << ((sizeof(t) * 8ULL) - 4ULL)))
+#define umaxof(t)                                                              \
+	(((0x1ULL << ((sizeof(t) * 8ULL) - 1ULL)) - 1ULL) |                        \
+	 (0xFULL << ((sizeof(t) * 8ULL) - 4ULL)))
 
-#define smaxof(t) (((0x1ULL << ((sizeof(t) * 8ULL) - 1ULL)) - 1ULL) | \
-                   (0x7ULL << ((sizeof(t) * 8ULL) - 4ULL)))
+#define smaxof(t)                                                              \
+	(((0x1ULL << ((sizeof(t) * 8ULL) - 1ULL)) - 1ULL) |                        \
+	 (0x7ULL << ((sizeof(t) * 8ULL) - 4ULL)))
 
 #define maxof(t) ((unsigned long long)(issigned(t) ? smaxof(t) : umaxof(t)))
 
@@ -37,35 +45,33 @@ static ring_buffer_t *inBuff;
 static ring_buffer_t *outBuff;
 static void (*nextStage)(void);
 
-void initMotionDetectStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff, void (*pNextStage)(void))
+void initMotionDetectStage(ring_buffer_t *pInBuff, ring_buffer_t *pOutBuff,
+						   void (*pNextStage)(void))
 {
-    inBuff = pInBuff;
-    outBuff = pOutBuff;
-    nextStage = pNextStage;
+	inBuff = pInBuff;
+	outBuff = pOutBuff;
+	nextStage = pNextStage;
 }
 
 void motionDetectStage(void)
 {
-    if (ring_buffer_num_items(inBuff) >= 15)
-    {
-        magnitude_t min = maxof(magnitude_t);
-        magnitude_t max = 0;
-        for (int i = 0; i < 12; i++)
-        {
-            data_point_t dp;
-            ring_buffer_peek(inBuff, &dp, i);
-            if (dp.magnitude > max)
-                max = dp.magnitude;
-            if (dp.magnitude < min)
-                min = dp.magnitude;
-        }
+	if (ring_buffer_num_items(inBuff) >= 15) {
+		magnitude_t min = maxof(magnitude_t);
+		magnitude_t max = 0;
+		for (int i = 0; i < 12; i++) {
+			data_point_t dp;
+			ring_buffer_peek(inBuff, &dp, i);
+			if (dp.magnitude > max)
+				max = dp.magnitude;
+			if (dp.magnitude < min)
+				min = dp.magnitude;
+		}
 
-        if (max - min > MOTION_THRESHOLD)
-        {
-            data_point_t dataPoint;
-            ring_buffer_dequeue(inBuff, &dataPoint);
-            ring_buffer_queue(outBuff, dataPoint);
-            (*nextStage)();
-        }
-    }
+		if (max - min > MOTION_THRESHOLD) {
+			data_point_t dataPoint;
+			ring_buffer_dequeue(inBuff, &dataPoint);
+			ring_buffer_queue(outBuff, dataPoint);
+			(*nextStage)();
+		}
+	}
 }

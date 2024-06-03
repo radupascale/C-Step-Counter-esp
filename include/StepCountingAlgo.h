@@ -39,7 +39,7 @@ void initAlgo(void);
     @param y, the y axis
     @param z, the z axis
 */
-void processSample(time_t time, accel_t x, accel_t y, accel_t z);
+void processSample(time_accel_t time, accel_t x, accel_t y, accel_t z);
 
 /**
     Resets the number of walked steps
