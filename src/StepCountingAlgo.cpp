@@ -106,3 +106,8 @@ steps_t getSteps(void)
 {
 	return steps;
 }
+
+void setSteps(steps_t step_count)
+{
+    steps = step_count;
+}

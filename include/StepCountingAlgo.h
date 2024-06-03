@@ -57,4 +57,11 @@ void resetAlgo(void);
 */
 steps_t getSteps(void);
 
+/**
+ * @brief Set the current number of steps
+ * @param value, step_count to be set
+ * 
+ */
+void setSteps(steps_t step_count);
+
 #endif
